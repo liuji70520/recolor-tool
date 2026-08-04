@@ -1,0 +1,5 @@
+web/sessions/
+demo/
+__pycache__/
+*.pyc
+.ghtoken

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SVG / PDF 一键换色</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>一键换色</h1>
+    <span class="tagline">SVG / PDF / 图片 · 改配色不重跑</span>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>文件</h2>
+        <div id="fileDrop" class="drop small">
+          <div class="drop-icon">⇪</div>
+          <div>拖拽文件到这里，或点击选择</div>
+          <div class="hint">SVG / PDF / PNG / JPG / GIF / BMP / TIFF / WebP</div>
+          <input type="file" id="file"
+            accept=".svg,.pdf,.png,.jpg,.jpeg,.gif,.bmp,.tif,.tiff,.webp" hidden>
+        </div>
+        <div id="fileInfo" class="fileinfo" hidden></div>
+        <div id="historyBox" class="history" hidden>
+          <div class="history-title">历史记录（7 天）</div>
+          <div id="historyList" class="history-list"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="mapPanel" hidden>
+        <h2>颜色映射 <span class="sub">原颜色 → 替换颜色</span></h2>
+        <div class="mrow head">
+          <span>原颜色</span>
+          <span>替换颜色</span>
+          <span>类型 / 次数</span>
+          <span></span>
+        </div>
+        <div id="mapBody" class="map-body"></div>
+        <button id="addRowBtn" class="link-btn">＋ 添加一行</button>
+        <details class="batch">
+          <summary>批量粘贴映射（每行：原色 新色）</summary>
+          <textarea id="batchArea" rows="3" spellcheck="false"
+            placeholder="#e41a1c #00b8d9"></textarea>
+        </details>
+        <div id="mapFileDrop" class="map-file-drop">
+          <span>或拖入映射文件（JSON / txt，每行“原色 新色”）</span>
+          <input type="file" id="mapFile" accept=".json,.txt,.csv" hidden>
+        </div>
+        <label class="tolerance">换色方式
+          <select id="mode">
+            <option value="smooth" selected>平滑换色（推荐）</option>
+            <option value="exact">仅精确匹配</option>
+          </select>
+        </label>
+        <span class="tol-hint">平滑模式：纯色精确映射，渐变/抗锯齿边缘自动过渡；仅精确匹配模式适用于 JPG 时可在下方加容差</span>
+        <label class="minor">
+          <input type="checkbox" id="showMinor"> 显示次要颜色（细线/边缘/过渡）
+        </label>
+        <label class="minor">
+          <input type="checkbox" id="protectBg" checked> 不替换背景色
+          <span id="bgLabel" class="bg-label"></span>
+        </label>
+        <label class="tolerance">容差（仅精确模式）
+          <input type="number" id="tolerance" min="0" max="255" value="0">
+        </label>
+        <button id="applyBtn" class="btn primary wide">应用配色</button>
+        <div id="status" class="status"></div>
+        <div id="warnbox" class="warn" hidden></div>
+      </section>
+    </aside>
+
+    <section class="stage">
+      <div class="stage-bar">
+        <div class="seg" id="viewSeg">
+          <button class="seg-btn active" data-view="before">原图</button>
+          <button class="seg-btn" data-view="after" disabled>换色后</button>
+        </div>
+        <div class="stage-actions">
+          <button id="cancelHl" class="btn" hidden>取消高亮</button>
+          <input type="text" id="outName" class="outname"
+            placeholder="输出文件名" spellcheck="false" disabled>
+          <a id="download" class="btn primary" hidden>下载结果</a>
+        </div>
+      </div>
+      <div class="stage-canvas">
+        <img id="viewImg" alt="">
+        <div id="placeholder" class="placeholder">
+          上传 SVG / PDF / 图片，在左侧改好颜色后点“应用配色”
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
