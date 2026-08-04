@@ -4,3 +4,4 @@ pikepdf>=9.0
 numpy>=1.26
 pillow>=10.0
 gradio>=5.0
+spaces>=0.35

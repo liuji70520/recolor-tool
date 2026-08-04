@@ -22,6 +22,19 @@ from PIL import Image
 
 import recolor
 
+# Hugging Face ZeroGPU 要求主模块在启动时至少检测到一个 @spaces.GPU 函数。
+# 本工具是纯 CPU 计算（扫描/换色/预览），这里只是一个满足检查的空占位，
+# 不会被任何 UI 事件调用，因此不会真正占用 GPU。
+try:
+    import spaces
+
+    @spaces.GPU
+    def _zerogpu_stub(_unused=0):
+        return 0
+
+except Exception:
+    pass
+
 SESSIONS = Path(os.environ.get("SESSIONS_DIR", str(Path(tempfile.gettempdir()) / "recolor-sessions")))
 SESSIONS.mkdir(exist_ok=True)
 RASTER_EXTS = recolor.RASTER_EXTS
