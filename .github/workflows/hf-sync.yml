@@ -1,0 +1,20 @@
+name: Sync to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Sync to Space
+        uses: huggingface/hub-sync@main
+        with:
+          type: space
+          space: liu-ji/recolor-tool
+          token: ${{ secrets.HF_TOKEN }}
