@@ -15,6 +15,6 @@ jobs:
       - name: Sync to Space
         uses: huggingface/hub-sync@main
         with:
-          type: space
-          space: liu-ji/recolor-tool
-          token: ${{ secrets.HF_TOKEN }}
+          repo_type: space
+          huggingface_repo_id: liu-ji/recolor-tool
+          hf_token: ${{ secrets.HF_TOKEN }}
