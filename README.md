@@ -100,25 +100,17 @@ python recolor.py apply figure.jpg mapping.json -o figure-new.jpg      # 精确
 ## 部署
 
 注意：GitHub Pages 只能托管静态页面，跑不了本工具的 Python 后端。
-推荐用 Hugging Face Spaces（免费 CPU 档 16GB 内存，能处理超大 PDF）或 Render。
+推荐用 Hugging Face Spaces（免费 CPU 档 16GB 内存，能处理超大 PDF）。
+空间 SDK 选择 **Gradio**（仓库根目录的 `app.py` 就是 Gradio 版界面）。
 
 ### 步骤（Hugging Face Spaces，推荐）
 
 1. 在 GitHub 上新建仓库（如 `recolor-tool`），把本目录内容推上去；
-2. 打开 https://huggingface.co/new-space ，创建 Space：SDK 选 **Docker**，
+2. 打开 https://huggingface.co/new-space ，创建 Space：SDK 选 **Gradio**，
    并把 GitHub 仓库连进来（或直接用 Git 推送）；
 3. 等自动构建完成，打开生成的 `https://你的用户名-recolor-tool.hf.space` 即可使用；
 4. 可设置环境变量：`MAX_UPLOAD_MB`（上传上限，默认 500）、`HISTORY_DAYS`（默认 7）。
 
-### 步骤（Render）
-
-1. GitHub 建仓库并推送；
-2. Render → New Web Service → 连接该仓库 → 环境选 Docker；
-3. 设置环境变量 `PORT=10000`、`HOST=0.0.0.0`（免费档 512MB 内存，超大 PDF 可能不够）。
-
-### 本地用 Docker 测试
-
-```bash
-docker build -t recolor-tool .
-docker run -p 7860:7860 recolor-tool
-```
+Gradio 版（`app.py`）功能：上传文件 → 自动扫色（标注填充/描边）→ 编辑替换色 →
+应用配色预览（快）→ 定位高亮 → 生成下载文件。网页版（`web/`，Flask）功能更全，
+可在本地 `python web/app.py` 使用。
