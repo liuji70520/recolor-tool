@@ -3,7 +3,7 @@ title: 一键换色 SVG/PDF/图片
 emoji: 🎨
 colorFrom: indigo
 colorTo: pink
-sdk: docker
+sdk: gradio
 pinned: false
 ---
 
