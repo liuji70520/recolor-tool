@@ -22,8 +22,15 @@ from pathlib import Path
 import fitz
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
-BASE = Path(__file__).resolve().parent
-sys.path.insert(0, str(BASE.parent))
+if getattr(sys, "frozen", False):
+    # PyInstaller 打包：程序文件在 exe 旁边，模板/静态在 _MEIPASS 解压目录
+    BASE = Path(sys.executable).resolve().parent
+    RES_ROOT = Path(getattr(sys, "_MEIPASS", BASE))
+    sys.path.insert(0, str(BASE.parent))
+else:
+    BASE = Path(__file__).resolve().parent
+    RES_ROOT = BASE
+    sys.path.insert(0, str(BASE.parent))
 import recolor  # noqa: E402
 
 SESSIONS = Path(os.environ.get("SESSIONS_DIR", str(BASE / "sessions")))
@@ -36,7 +43,11 @@ HISTORY_DAYS = int(os.environ.get("HISTORY_DAYS", "7"))
 _active_jobs = set()
 _active_lock = threading.Lock()
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(RES_ROOT / "templates"),
+    static_folder=str(RES_ROOT / "static"),
+)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD
 
 

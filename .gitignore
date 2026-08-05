@@ -3,3 +3,10 @@ demo/
 __pycache__/
 *.pyc
 .ghtoken
+build/
+dist/
+*.spec
+nuitka-build.log
+nuitka-crash-report.xml
+run_nuitka.bat
+run_nuitka.py
