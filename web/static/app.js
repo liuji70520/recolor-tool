@@ -599,6 +599,10 @@ function highlightImage(dataUrl, rgb, tol) {
         }
         let matched = 0;
         for (let i = 0; i < p.length; i += 4) {
+          // 保护白色/浅色背景：保持原样，避免被“目标色+白色混合”候选色误命中全图提亮
+          if (p[i] > 235 && p[i + 1] > 235 && p[i + 2] > 235) {
+            continue;
+          }
           let best = Infinity;
           for (const cr of cands) {
             const dist =
