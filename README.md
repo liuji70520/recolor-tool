@@ -37,15 +37,17 @@ python app.py
 .\build_exe_pyinstaller.ps1
 ```
 
-产物在 `dist\RecolorTool\`，把这个文件夹整个发给对方：
+产物是单个 `dist\RecolorTool.exe`（约 46MB），把这个文件发给对方即可：
 
-- 双击 `RecolorTool.exe` 即自动启动服务并打开浏览器（无需装 Python）
+- 双击 `RecolorTool.exe` 即自动启动服务并打开浏览器（单文件自解压运行，
+  从任何目录启动都行，无需解压安装）
 - 端口被占用会自动换空闲端口；会话保存在 `%LOCALAPPDATA%\RecolorTool\sessions`
   （7 天自动清理）
-- 不想要了直接删除整个文件夹即可
+- 不想要了直接删除 exe 即可
 
 打包脚本里的 Python 路径是 `D:\envs\py312\python.exe`，换机器打包时改成自己的
-环境即可（需安装 `pip install flask pymupdf pikepdf numpy pillow pyinstaller`）。
+环境即可（需安装 `pip install flask pymupdf pikepdf numpy pillow pyinstaller`；
+构建环境里若装有 gradio/pandas，脚本会自动排除，不影响体积）。
 
 ## 三步工作流
 
