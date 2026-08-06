@@ -450,8 +450,11 @@ css = """
 
 GRADIO_MAJOR = int(getattr(gr, "__version__", "5").split(".")[0])
 blocks_kwargs = {"title": "一键换色"}
-if GRADIO_MAJOR < 6:
-    blocks_kwargs["css"] = css
+launch_kwargs = {}
+if GRADIO_MAJOR >= 6:
+    launch_kwargs = {"theme": gr.themes.Soft(), "css": css}
+else:
+    blocks_kwargs = {"title": "一键换色", "theme": gr.themes.Soft(), "css": css}
 
 with gr.Blocks(**blocks_kwargs) as demo:
     gr.Markdown(
@@ -522,7 +525,4 @@ with gr.Blocks(**blocks_kwargs) as demo:
 
 
 if __name__ == "__main__":
-    launch_kwargs = {"theme": gr.themes.Soft()}
-    if GRADIO_MAJOR >= 6:
-        launch_kwargs["css"] = css
     demo.queue(default_concurrency_limit=4).launch(**launch_kwargs)
