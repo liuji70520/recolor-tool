@@ -279,29 +279,33 @@ def on_apply(state, df, protect, smooth, tolerance, progress=gr.Progress()):
 
 
 def on_select(evt: gr.SelectData, state, view):
-    if not state:
-        return gr.update(), gr.update(), "请先上传文件"
-    r, c = evt.index
-    items = state["items"]
-    if r is None or r >= len(items):
-        return gr.update(), gr.update(), ""
-    if c == 0:
-        hex_color = items[r]["hex"]
-        target_view = "before"
-    elif c == 1:
-        hex_color = norm(str(evt.value))
-        if not HEX_RE.match(hex_color):
-            return gr.update(), gr.update(), "替换颜色格式应为 #RRGGBB"
-        if state.get("after") is None:
-            return gr.update(), gr.update(), "请先应用配色，再在“换色后”视图高亮替换色"
-        target_view = "after"
-    else:
-        return gr.update(), gr.update(), ""
-    base = state["before"] if target_view == "before" else state["after"]
-    img, matched = highlight_np(base, rgb_from_hex(hex_color), items[r].get("opacities"))
-    if not matched:
-        return gr.update(), gr.update(), f"图中未找到 {hex_color}"
-    return img, gr.update(value=target_view), f"已高亮 {hex_color}（{matched} 像素），再点一次取消"
+    try:
+        if not state:
+            return gr.update(), gr.update(), "请先上传文件"
+        idx = evt.index
+        r, c = (idx.get("row"), idx.get("col")) if isinstance(idx, dict) else idx
+        items = state["items"]
+        if r is None or r >= len(items):
+            return gr.update(), gr.update(), ""
+        if c == 0:
+            hex_color = items[r]["hex"]
+            target_view = "原图"
+        elif c == 1:
+            hex_color = norm(str(evt.value))
+            if not HEX_RE.match(hex_color):
+                return gr.update(), gr.update(), "替换颜色格式应为 #RRGGBB"
+            if state.get("after") is None:
+                return gr.update(), gr.update(), "请先应用配色，再在“换色后”视图高亮替换色"
+            target_view = "换色后"
+        else:
+            return gr.update(), gr.update(), ""
+        base = state["before"] if target_view == "原图" else state["after"]
+        img, matched = highlight_np(base, rgb_from_hex(hex_color), items[r].get("opacities"))
+        if not matched:
+            return gr.update(), gr.update(), f"图中未找到 {hex_color}"
+        return img, gr.update(value=target_view), f"已高亮 {hex_color}（{matched} 像素），再点一次取消"
+    except Exception as e:
+        return gr.update(), gr.update(), f"高亮失败：{type(e).__name__}: {e}"
 
 
 def on_view(view, state):
