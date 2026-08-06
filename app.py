@@ -9,6 +9,8 @@
 - 导出 PDF / SVG / PNG / 颜色代码（CSV / JSON），PDF 懒加载生成
 """
 
+import csv
+import io
 import json
 import os
 import re
@@ -345,6 +347,52 @@ def on_batch(text, state):
     return build_df(items, replace), f"已填入 {len(pairs)} 组映射"
 
 
+def parse_mapping_file(file):
+    """解析映射文件：CSV 第一列原色、第二列替换色（不读表头，表头自然被过滤）；
+    也支持 JSON（{原色: 新色}）和 txt（每行：原色 新色）。"""
+    path = Path(file) if isinstance(file, (str, Path)) else Path(file.name)
+    pairs = []
+    ext = path.suffix.lower()
+    if ext == ".json":
+        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        if isinstance(data, dict):
+            pairs = [(norm(str(k)), norm(str(v))) for k, v in data.items()]
+    else:
+        text = path.read_text(encoding="utf-8", errors="replace").lstrip("\ufeff")
+        if ext == ".csv":
+            for row in csv.reader(io.StringIO(text)):
+                if len(row) >= 2:
+                    pairs.append((norm(row[0]), norm(row[1])))
+        else:
+            for line in text.splitlines():
+                parts = re.split(r"[\s,;，；\t]+", line.strip())
+                if len(parts) >= 2:
+                    pairs.append((norm(parts[0]), norm(parts[1])))
+    return [(o, n) for o, n in pairs if HEX_RE.match(o) and HEX_RE.match(n)]
+
+
+def on_map_file(file, state):
+    if not state:
+        return gr.update(), "请先上传文件"
+    try:
+        pairs = parse_mapping_file(file)
+    except Exception as e:
+        return gr.update(), f"解析映射文件失败：{e}"
+    if not pairs:
+        return gr.update(), "没有解析到有效映射：CSV 第一列原色、第二列替换色（不读表头，表头会被自动跳过）"
+    items = list(state["items"])
+    replace = dict(state.get("replace") or {})
+    for old, new in pairs:
+        replace[old] = new
+        if old not in {it["hex"] for it in items}:
+            items.append(
+                {"hex": old, "rgb": rgb_from_hex(old), "count": 0, "opacities": [], "kind": "fill", "minor": False}
+            )
+    state["items"] = items
+    state["replace"] = replace
+    return build_df(items, replace), f"已从文件载入 {len(pairs)} 组映射"
+
+
 def _saved_mapping(state):
     cfg = json.loads((SESSIONS / state["sid"] / "mapping.json").read_text(encoding="utf-8"))
     return build_table(cfg["mapping"]), cfg.get("tolerance", 0), cfg.get("smooth", True)
@@ -487,9 +535,14 @@ with gr.Blocks(**blocks_kwargs) as demo:
             )
             show_minor = gr.Checkbox(value=False, label="显示次要颜色（细线/边缘/过渡）")
             minor_note = gr.Markdown()
-            with gr.Accordion("批量粘贴映射（每行：原色 新色）", open=False):
-                batch_area = gr.Textbox(lines=3, placeholder="#e41a1c #00b8d9", label="")
+            with gr.Accordion("批量填入映射（粘贴 / CSV / JSON / txt）", open=False):
+                batch_area = gr.Textbox(lines=3, placeholder="#e41a1c #00b8d9", label="每行：原色 新色")
                 batch_btn = gr.Button("填入映射")
+                map_file = gr.File(
+                    label="或上传映射文件（CSV 第一列原色、第二列替换色，不读表头）",
+                    file_types=[".csv", ".json", ".txt"],
+                    file_count="single",
+                )
             with gr.Row():
                 protect_bg = gr.Checkbox(value=True, label="不替换背景色")
                 smooth = gr.Checkbox(value=True, label="平滑换色")
@@ -523,6 +576,7 @@ with gr.Blocks(**blocks_kwargs) as demo:
     cancel_hl.click(on_cancel_hl, inputs=[state, view], outputs=[view_img])
     show_minor.change(on_show_minor, inputs=[show_minor, state], outputs=[colors_df, minor_note])
     batch_btn.click(on_batch, inputs=[batch_area, state], outputs=[colors_df, status])
+    map_file.upload(on_map_file, inputs=[map_file, state], outputs=[colors_df, status])
     export_btn.click(on_export, inputs=[state, export_fmt], outputs=[file_out, status])
 
 
