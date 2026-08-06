@@ -694,11 +694,17 @@ def _write_port(port):
         pass
 
 
-def _port_reachable(port, timeout=1.0):
-    """检查 127.0.0.1:port 是否真的有服务在监听。"""
+def _port_healthy(port, timeout=2.0):
+    """检查端口上的实例是否“真正可用”：除了能连上，还要能返回静态资源。
+    临时目录实例的页面还在、但 static 已被清理时，连接会成功却打不开完整页面，
+    此时不能复用，必须另开新实例，避免把浏览器重定向到坏页面。"""
     try:
-        with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout):
-            return True
+        import urllib.request
+
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{int(port)}/static/app.js", timeout=timeout
+        ) as resp:
+            return len(resp.read(64)) > 0
     except Exception:
         return False
 
@@ -717,7 +723,7 @@ def _already_running():
         if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
             try:
                 port = int(PORT_FILE.read_text(encoding="utf-8").strip())
-                if _port_reachable(port):
+                if _port_healthy(port):
                     webbrowser.open(f"http://127.0.0.1:{port}")
                     return True
             except Exception:
