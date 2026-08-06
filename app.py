@@ -234,6 +234,7 @@ def on_upload(file, progress=gr.Progress()):
         "items": items,
         "view": "before",
         "replace": {},
+        "hl": None,
     }
     progress(1.0, desc="完成")
     status = f"扫描完成：共 {total} 种颜色（展示前 {len(items)} 种）"
@@ -266,6 +267,7 @@ def on_apply(state, df, protect, smooth, tolerance, progress=gr.Progress()):
     after, matched = map_preview(state["before"], build_table(mapping_hex), int(tolerance or 0), smooth, anchors)
     state["after"] = after
     state["mapping"] = mapping_hex
+    state["hl"] = None
     (SESSIONS / state["sid"] / "mapping.json").write_text(
         json.dumps(
             {"mapping": mapping_hex, "tolerance": int(tolerance or 0), "smooth": smooth},
@@ -300,9 +302,14 @@ def on_select(evt: gr.SelectData, state, view):
         else:
             return gr.update(), gr.update(), ""
         base = state["before"] if target_view == "原图" else state["after"]
+        hl_key = (target_view, hex_color)
+        if state.get("hl") == hl_key:
+            state["hl"] = None
+            return base, gr.update(value=target_view), "已取消高亮"
         img, matched = highlight_np(base, rgb_from_hex(hex_color), items[r].get("opacities"))
         if not matched:
             return gr.update(), gr.update(), f"图中未找到 {hex_color}"
+        state["hl"] = hl_key
         return img, gr.update(value=target_view), f"已高亮 {hex_color}（{matched} 像素），再点一次取消"
     except Exception as e:
         return gr.update(), gr.update(), f"高亮失败：{type(e).__name__}: {e}"
@@ -315,6 +322,7 @@ def on_view(view, state):
 def on_cancel_hl(state, view):
     if not state:
         return gr.update()
+    state["hl"] = None
     base = state["after"] if view == "换色后" and state.get("after") is not None else state["before"]
     return base
 
