@@ -122,8 +122,8 @@ python recolor.py apply figure.jpg mapping.json -o figure-new.jpg      # 精确
 
 注意：GitHub Pages 只能托管静态页面，跑不了本工具的 Python 后端。
 推荐用 Hugging Face Spaces（免费 CPU 档 16GB 内存，能处理超大 PDF）。
-空间 SDK 选择 **Gradio**（仓库根目录的 `app.py` 是入口，实际托管 `web/` 的
-Flask 网页版）。
+空间 SDK 选择 **Gradio**（仓库根目录的 `app.py` 就是 Gradio 版界面，兼容
+ZeroGPU）。
 
 ### 步骤（Hugging Face Spaces，推荐）
 
@@ -133,6 +133,7 @@ Flask 网页版）。
 3. 等自动构建完成，打开生成的 `https://你的用户名-recolor-tool.hf.space` 即可使用；
 4. 可设置环境变量：`MAX_UPLOAD_MB`（上传上限，默认 500）、`HISTORY_DAYS`（默认 7）。
 
-空间现在托管的就是 `web/` 的 Flask 网页版：三栏界面（主图预览 + 小文件上传 +
-颜色映射表）、色块/颜色码点击即高亮、导出 PDF/SVG/PNG/颜色代码（CSV/JSON）、
-异步扫描进度、PDF 懒加载生成，与本地 `python web/app.py` 完全一致。
+Gradio 版（`app.py`）界面贴近 Flask 网页版：主图预览占主要区域、小文件上传、
+颜色映射表带**色块**、点击“原颜色 / 替换颜色”列即高亮对应颜色、应用配色自动
+刷新预览，支持导出 PDF / SVG / PNG / 颜色代码（CSV / JSON）和 PDF 懒加载生成。
+本地 Flask 版（`web/`）功能更全，可在本地 `python web/app.py` 使用。
