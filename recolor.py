@@ -84,7 +84,7 @@ def load_mapping(path):
 
 # ---------------------------------------------------------------- SVG
 
-HEX_RE = re.compile(r"#([0-9a-fA-F]{3,8})")
+HEX_RE = re.compile(r"(?<!url\()#([0-9a-fA-F]{3,8})")
 RGB_RE = re.compile(r"rgba?\((.*?)\)", re.I)
 
 

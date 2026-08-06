@@ -16,6 +16,10 @@ pinned: false
 
 图形界面，支持拖拽上传、自动扫色、颜色映射表、前后预览对比、一键下载：
 
+- 导出格式可选：**PDF / SVG / PNG / 颜色代码（CSV / JSON）**，PDF/SVG 之间可互转
+  （PDF 导出 PNG/SVG 渲染的是换色后的矢量文件，PNG 导出可加 `?scale=` 调清晰度）
+- 颜色定位高亮：按文件中的真实透明度精确匹配，只高亮该颜色本身，不误伤相近色
+
 ```bash
 cd recolor-tool/web
 python app.py
@@ -23,7 +27,24 @@ python app.py
 
 然后浏览器打开 `http://127.0.0.1:8377` 即可。默认只允许本机访问；
 想让局域网内其他人也能用，把 `app.py` 里的 `host="127.0.0.1"` 改成
-`host="0.0.0.0"`（部署到服务器同理）。
+`host="0.0.0.0"`（部署到服务器同理）。启动后会自动打开浏览器；
+8377 被占用时会自动换空闲端口（可用环境变量 `PORT` 指定，如 `PORT=9000`，
+`AUTO_OPEN=0` 可关闭自动开浏览器）。
+
+## 打包成 exe（发给别人）
+
+```powershell
+.\build_exe_pyinstaller.ps1
+```
+
+产物在 `dist\RecolorTool\`，把这个文件夹整个发给对方：
+
+- 双击 `RecolorTool.exe` 即自动启动服务并打开浏览器（无需装 Python）
+- 端口被占用会自动换空闲端口；文件保存在 exe 旁边的 `sessions\`（7 天自动清理）
+- 不想要了直接删除整个文件夹即可
+
+打包脚本里的 Python 路径是 `D:\envs\py312\python.exe`，换机器打包时改成自己的
+环境即可（需安装 `pip install flask pymupdf pikepdf numpy pillow pyinstaller`）。
 
 ## 三步工作流
 
@@ -101,7 +122,8 @@ python recolor.py apply figure.jpg mapping.json -o figure-new.jpg      # 精确
 
 注意：GitHub Pages 只能托管静态页面，跑不了本工具的 Python 后端。
 推荐用 Hugging Face Spaces（免费 CPU 档 16GB 内存，能处理超大 PDF）。
-空间 SDK 选择 **Gradio**（仓库根目录的 `app.py` 就是 Gradio 版界面）。
+空间 SDK 选择 **Gradio**（仓库根目录的 `app.py` 是入口，实际托管 `web/` 的
+Flask 网页版）。
 
 ### 步骤（Hugging Face Spaces，推荐）
 
@@ -111,6 +133,6 @@ python recolor.py apply figure.jpg mapping.json -o figure-new.jpg      # 精确
 3. 等自动构建完成，打开生成的 `https://你的用户名-recolor-tool.hf.space` 即可使用；
 4. 可设置环境变量：`MAX_UPLOAD_MB`（上传上限，默认 500）、`HISTORY_DAYS`（默认 7）。
 
-Gradio 版（`app.py`）功能：上传文件 → 自动扫色（标注填充/描边）→ 编辑替换色 →
-应用配色预览（快）→ 定位高亮 → 生成下载文件。网页版（`web/`，Flask）功能更全，
-可在本地 `python web/app.py` 使用。
+空间现在托管的就是 `web/` 的 Flask 网页版：三栏界面（主图预览 + 小文件上传 +
+颜色映射表）、色块/颜色码点击即高亮、导出 PDF/SVG/PNG/颜色代码（CSV/JSON）、
+异步扫描进度、PDF 懒加载生成，与本地 `python web/app.py` 完全一致。

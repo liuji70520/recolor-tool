@@ -12,10 +12,12 @@ import json
 import os
 import re
 import shutil
+import socket
 import sys
 import threading
 import time
 import uuid
+import webbrowser
 from contextlib import redirect_stderr
 from pathlib import Path
 
@@ -49,6 +51,7 @@ app = Flask(
     static_folder=str(RES_ROOT / "static"),
 )
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # 前端静态文件不缓存，改完刷新即生效
 
 
 # ---------------------------------------------------------------- 会话与异步任务
@@ -207,7 +210,15 @@ def _finish_upload(sid, src, ext):
         _set_progress(sid, 30, "统计颜色")
         items, total = scan_colors(src, ext)
     _set_progress(sid, 92, "生成预览")
-    result = {"colors": items, "total": total, "preview": render_preview(src)}
+    pages = None
+    if ext == ".pdf":
+        try:
+            doc = fitz.open(src)
+            pages = doc.page_count
+            doc.close()
+        except Exception:
+            pages = None
+    result = {"colors": items, "total": total, "pages": pages, "preview": render_preview(src)}
     result["background"] = _preview_background(result["preview"])
     (d / "scan.json").write_text(
         json.dumps(result, ensure_ascii=False), encoding="utf-8"
@@ -337,6 +348,38 @@ def _finish_apply(sid, src, table, tolerance, smooth):
     )
     _set_meta(sid, status="ready")
     _set_progress(sid, 100, "完成")
+
+
+def _finish_generate(sid, src, ext):
+    """在后台生成最终文件（PDF 矢量换色 + 压缩），带进度。"""
+    d = _session_dir(sid)
+    cfg = _read_json(d / "mapping.json", {}) or {}
+    if not cfg.get("mapping"):
+        raise RuntimeError("请先应用配色，再生成文件")
+    table = {}
+    for k, v in cfg["mapping"].items():
+        try:
+            table[recolor.color_to_rgb(k)] = recolor.color_to_rgb(v)
+        except ValueError:
+            continue
+    out = d / ("recolored" + ext)
+    stats = {"matched": 0}
+    err = io.StringIO()
+
+    def cb(done, total):
+        _set_progress(sid, 10 + int(done / max(total, 1) * 80), f"生成最终文件 {done}/{total}")
+
+    with redirect_stderr(err):
+        if ext == ".pdf":
+            recolor.apply_pdf(str(src), table, str(out), stats, cb)
+        else:
+            text = src.read_text(encoding="utf-8", errors="replace")
+            out.write_text(recolor.recolor_svg(text, table, stats), encoding="utf-8")
+    warnings = err.getvalue().strip()
+    if warnings:
+        _set_meta(sid, last_warnings=warnings)
+    _set_progress(sid, 100, "完成")
+    _set_meta(sid, status="ready", error=None)
 
 
 # ---------------------------------------------------------------- 路由
@@ -472,6 +515,33 @@ def api_apply():
     return jsonify(status="applying")
 
 
+@app.post("/api/generate/<sid>")
+def api_generate(sid):
+    """PDF 懒加载：应用配色只出预览，点下载时后台生成真正的矢量文件。"""
+    if not SID_RE.match(sid):
+        return jsonify(error="无效的文件会话"), 404
+    d = _session_dir(sid)
+    m = _meta(sid)
+    ext = m.get("ext")
+    if ext != ".pdf":
+        return jsonify(error="该格式在应用配色时已生成文件，直接下载即可"), 400
+    out = d / "recolored.pdf"
+    if out.exists():
+        return jsonify(status="ready")  # 已生成过，直接下载
+    src = d / "original.pdf"
+    if not src.exists():
+        return jsonify(error="文件已失效，请重新上传"), 404
+    with _active_lock:
+        if sid in _active_jobs:
+            return jsonify(error="文件正在生成中，请稍候"), 409
+    cfg = _read_json(d / "mapping.json", {}) or {}
+    if not cfg.get("mapping"):
+        return jsonify(error="请先应用配色"), 409
+    _set_meta(sid, status="generating", error=None)
+    _start_job(sid, lambda: _finish_generate(sid, src, ext))
+    return jsonify(status="generating")
+
+
 @app.get("/api/download/<sid>")
 def api_download(sid):
     if not SID_RE.match(sid):
@@ -483,40 +553,202 @@ def api_download(sid):
         abort(404)
     out = d / ("recolored" + ext)
     if not out.exists():
-        # PDF：应用配色时只出了预览，下载时才做真正的矢量换色+压缩（只做一次）
         if ext != ".pdf":
             abort(404)
-        cfg = _read_json(d / "mapping.json", {}) or {}
-        if not cfg.get("mapping"):
-            return jsonify(error="请先应用配色"), 409
-        with _active_lock:
-            if sid in _active_jobs:
-                return jsonify(error="文件正在处理中，请稍后再试"), 409
-            _active_jobs.add(sid)
-        table = {}
-        for k, v in cfg["mapping"].items():
-            try:
-                table[recolor.color_to_rgb(k)] = recolor.color_to_rgb(v)
-            except ValueError:
-                continue
-        src = d / ("original" + ext)
-        err = io.StringIO()
-        try:
-            with redirect_stderr(err):
-                recolor.apply_pdf(
-                    str(src),
-                    table,
-                    str(out),
-                    {"matched": 0},
-                )
-        finally:
-            with _active_lock:
-                _active_jobs.discard(sid)
+        return jsonify(error="最终文件尚未生成，请先点击下载按钮（会自动生成）"), 409
     return send_file(out, as_attachment=True, download_name=m.get("name") or out.name)
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "8377"))
+@app.get("/api/export/<sid>/<fmt>")
+def api_export(sid, fmt):
+    """按选定格式导出：pdf / svg / png（映射表 CSV/JSON 由前端本地生成）。"""
+    if not SID_RE.match(sid):
+        abort(404)
+    d = _session_dir(sid)
+    m = _meta(sid)
+    ext = m.get("ext")
+    if ext not in ALLOWED:
+        abort(404)
+    src = d / ("original" + ext)
+    if not src.exists():
+        abort(404)
+    stem = Path(m.get("name") or "recolored").stem
+
+    if fmt not in ("pdf", "svg", "png"):
+        return jsonify(error=f"不支持的导出格式: {fmt}"), 400
+
+    recolored = d / ("recolored" + ext)
+    if ext == ".pdf" and not recolored.exists():
+        return jsonify(error="最终文件尚未生成，请先点击导出（会自动生成）"), 409
+
+    try:
+        # ---- PDF ----
+        if fmt == "pdf":
+            if ext == ".pdf":
+                return send_file(recolored, as_attachment=True, download_name=f"{stem}-new.pdf")
+            if ext == ".svg":
+                doc = fitz.open(str(recolored))
+                pdf_bytes = doc.convert_to_pdf()
+                doc.close()
+                return send_file(
+                    io.BytesIO(pdf_bytes), as_attachment=True, download_name=f"{stem}-new.pdf"
+                )
+            return jsonify(error="位图无法导出为 PDF/SVG"), 400
+
+        # ---- SVG ----
+        if fmt == "svg":
+            if ext == ".svg":
+                return send_file(recolored, as_attachment=True, download_name=f"{stem}-new.svg")
+            if ext == ".pdf":
+                doc = fitz.open(str(recolored))
+                svg = doc[0].get_svg_image()
+                doc.close()
+                data = svg.encode("utf-8") if isinstance(svg, str) else bytes(svg)
+                return send_file(
+                    io.BytesIO(data), as_attachment=True, download_name=f"{stem}-new.svg"
+                )
+            return jsonify(error="位图无法导出为 PDF/SVG"), 400
+
+        # ---- PNG ----
+        if ext in RASTER_EXTS:
+            return send_file(recolored, as_attachment=True, download_name=f"{stem}-new.png")
+        try:
+            scale = max(0.5, min(6.0, float(request.args.get("scale", "2.0"))))
+        except ValueError:
+            scale = 2.0
+        doc = fitz.open(str(recolored))
+        page = doc[0]
+        pm = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+        png = pm.tobytes("png")
+        doc.close()
+        return send_file(io.BytesIO(png), as_attachment=True, download_name=f"{stem}-new.png")
+    except Exception as e:
+        return jsonify(error=f"导出失败：{e}"), 500
+
+
+def _find_free_port(preferred):
+    """找从 preferred 起第一个空闲端口，避免“端口被占用打不开”。"""
+    for port in range(preferred, preferred + 30):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    return preferred
+
+
+def _open_browser(url):
+    def _open():
+        time.sleep(1.2)
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    threading.Thread(target=_open, daemon=True).start()
+
+
+def _port_file():
+    """port.txt 放在用户级固定目录（%LOCALAPPDATA%\\RecolorTool）。
+    这样开发版和 exe、以及从不同文件夹解压的多个副本读到的都是同一个端口，
+    不会出现“各自写各自的 port.txt、互相读不到”的情况。"""
+    base = os.environ.get("RECOLOR_PORT_DIR")
+    if not base:
+        try:
+            local = os.environ.get("LOCALAPPDATA")
+            if local:
+                base = str(Path(local) / "RecolorTool")
+                Path(base).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            base = None
+    if not base:
+        base = str(BASE)
+    return Path(base) / "port.txt"
+
+
+PORT_FILE = _port_file()
+
+
+def _write_port(port):
+    try:
+        PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PORT_FILE.write_text(str(port), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _port_reachable(port, timeout=1.0):
+    """检查 127.0.0.1:port 是否真的有服务在监听。"""
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def _already_running():
+    """Windows 命名互斥体：已有实例且端口可访问时，打开它的浏览器并退出。
+    端口文件缺失或端口不通（例如开发版占用互斥体、实例已退出但端口文件残留）
+    时继续启动新实例，避免“双击 exe 没反应”。"""
+    if sys.platform != "win32" or os.environ.get("RECOLOR_NO_MUTEX") == "1":
+        return False
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.CreateMutexW(None, False, "RecolorTool_SingleInstance")
+        if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+            try:
+                port = int(PORT_FILE.read_text(encoding="utf-8").strip())
+                if _port_reachable(port):
+                    webbrowser.open(f"http://127.0.0.1:{port}")
+                    return True
+            except Exception:
+                pass
+            # 有互斥体但端口不可用：不退出，继续启动新实例
+            return False
+    except Exception:
+        pass
+    return False
+
+
+def _fatal(msg):
+    """窗口程序没有控制台，启动失败时写日志并弹窗提示，避免“没反应”。"""
+    try:
+        PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        (PORT_FILE.parent / "error.log").write_text(msg, encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, msg, "一键换色启动失败", 0x10)
+    except Exception:
+        pass
+
+
+def _main():
     _cleanup_sessions()
-    # 默认只在本机访问；部署时设置 HOST=0.0.0.0
-    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=port, threaded=True)
+    host = os.environ.get("HOST", "127.0.0.1")
+    preferred = int(os.environ.get("PORT", "8377"))
+    if _already_running():
+        sys.exit(0)
+    port = _find_free_port(preferred)
+    _write_port(port)
+    # 打包成 exe 后没有控制台，启动时自动打开浏览器
+    if os.environ.get("AUTO_OPEN", "1") == "1":
+        browser_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+        _open_browser(f"http://{browser_host}:{port}")
+    print(f"一键换色已启动: http://127.0.0.1:{port}  (Ctrl+C 退出)")
+    app.run(host=host, port=port, threaded=True)
+
+
+if __name__ == "__main__":
+    try:
+        _main()
+    except Exception:
+        import traceback
+
+        _fatal(traceback.format_exc())
+        raise

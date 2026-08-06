@@ -5,6 +5,8 @@ const HEX_RE = /^#[0-9a-fA-F]{3,8}$/;
 const SHOW_MAX = 300;
 const state = {
   id: null,
+  kind: null,
+  fileName: null,
   before: null,
   after: null,
   view: "before",
@@ -96,6 +98,8 @@ function upload(file) {
   $("fileInfo").hidden = false;
   $("fileInfo").textContent = `上传中 0%`;
   showStatus("");
+  $("exportFmt").hidden = true;
+  $("download").hidden = true;
 
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/api/upload");
@@ -115,6 +119,7 @@ function upload(file) {
     }
     const j = JSON.parse(xhr.responseText);
     state.id = j.id;
+    state.kind = j.kind;
     state.outNameTouched = false;
     $("fileInfo").textContent = `${j.name} · 解析中…`;
     try {
@@ -134,12 +139,18 @@ function upload(file) {
 }
 
 function onScanReady(fileName, scan) {
+  state.fileName = fileName;
   state.before = scan.preview;
   state.after = null;
   state.colors = scan.colors;
   state.total = scan.total;
   state.background = scan.background || null;
-  $("fileInfo").textContent = `${fileName} · 共 ${scan.total} 种颜色`;
+  const pages = scan.pages
+    ? scan.pages > 1
+      ? ` · 共 ${scan.pages} 页（预览第 1 页）`
+      : ""
+    : "";
+  $("fileInfo").textContent = `${fileName} · 共 ${scan.total} 种颜色${pages}`;
   $("mapPanel").hidden = false;
   $("warnbox").hidden = true;
   $("batchArea").value = "";
@@ -151,7 +162,8 @@ function onScanReady(fileName, scan) {
 
   const m = fileName.match(/(.+)\.([^.]+)$/);
   $("outName").disabled = false;
-  $("outName").value = m ? `${m[1]}-new.${m[2]}` : `${fileName}-new`;
+  $("outName").value = m ? `${m[1]}-new` : `${fileName}-new`;
+  setupExportFormats();
   if (state.background) {
     $("bgLabel").textContent = state.background;
     markBackgroundRows();
@@ -163,6 +175,69 @@ function onScanReady(fileName, scan) {
     });
   }
   refreshHistory();
+}
+
+/* ---------- 导出格式（PDF / SVG / PNG / 颜色代码） ---------- */
+
+function setupExportFormats() {
+  const sel = $("exportFmt");
+  const table = {
+    pdf: [["pdf", "PDF"], ["svg", "SVG"], ["png", "PNG"], ["map-csv", "颜色代码 CSV"], ["map-json", "颜色代码 JSON"]],
+    svg: [["svg", "SVG"], ["png", "PNG"], ["pdf", "PDF"], ["map-csv", "颜色代码 CSV"], ["map-json", "颜色代码 JSON"]],
+  };
+  const list = table[state.kind] || [["png", "PNG"], ["map-csv", "颜色代码 CSV"], ["map-json", "颜色代码 JSON"]];
+  sel.innerHTML = "";
+  list.forEach(([v, label]) => {
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = label;
+    sel.appendChild(o);
+  });
+  sel.hidden = false;
+}
+
+function exportBaseName() {
+  const v = $("outName").value.trim();
+  if (v) return v;
+  return (state.fileName || "recolored").replace(/\.[^.]+$/, "") + "-new";
+}
+
+function exportMapping(fmt) {
+  const map = {};
+  document.querySelectorAll("#mapBody .mrow").forEach((row) => {
+    const old = norm(row.querySelector(".oldhex").value);
+    const neu = norm(row.querySelector(".newhex").value);
+    if (!HEX_RE.test(old) || !HEX_RE.test(neu)) return;
+    map[old] = neu;
+  });
+  const keys = Object.keys(map);
+  if (!keys.length) {
+    showStatus("没有可导出的颜色映射", true);
+    return;
+  }
+  let content, mime, extName;
+  if (fmt === "map-json") {
+    content = JSON.stringify(map, null, 2);
+    mime = "application/json";
+    extName = "json";
+  } else {
+    const head = ["原颜色", "替换颜色"];
+    const body = keys.map((k) => `"${k}","${map[k]}"`);
+    content = "\ufeff" + [head.join(","), ...body].join("\r\n");
+    mime = "text/csv;charset=utf-8";
+    extName = "csv";
+  }
+  const base = (state.fileName || "mapping").replace(/\.[^.]+$/, "") + "-mapping";
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${base}.${extName}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showStatus(`已导出 ${keys.length} 组颜色映射 → ${a.download}`);
 }
 
 /* ---------- 颜色映射表 ---------- */
@@ -471,14 +546,7 @@ function onApplyReady(res) {
   setAfterAvailable(true);
   setSeg("after");
   refreshView();
-  const name = $("outName").value.trim();
   $("download").hidden = false;
-  $("download").href = res.download;
-  if (name) {
-    $("download").download = name;
-  } else {
-    $("download").removeAttribute("download");
-  }
   $("warnbox").hidden = !res.warnings;
   $("warnbox").textContent = res.warnings || "";
   showStatus(`完成：替换 ${res.matched} 处颜色`);
@@ -495,13 +563,30 @@ $("viewSeg").addEventListener("click", (e) => {
 
 $("download").addEventListener("click", async (e) => {
   e.preventDefault();
-  const href = $("download").getAttribute("href");
-  if (!href) return;
-  const name = $("outName").value.trim() || "recolored.pdf";
-  showStatus("正在生成最终文件…");
-  $("download").textContent = "生成中…";
+  const fmt = $("exportFmt").value;
+  $("download").disabled = true;
+  const oldText = $("download").textContent;
   try {
-    const r = await fetch(href);
+    if (fmt === "map-csv" || fmt === "map-json") {
+      exportMapping(fmt);
+      return;
+    }
+    if (state.kind === "pdf") {
+      $("download").textContent = "生成中…";
+      showStatus("正在生成最终文件…");
+      const g = await fetch(`/api/generate/${state.id}`, { method: "POST" });
+      const gj = await g.json();
+      if (!g.ok) throw new Error(gj.error || "生成失败");
+      if (gj.status !== "ready") {
+        await pollStatus(state.id, (p) => {
+          const msg = p.message ? ` · ${p.message}` : "";
+          showStatus(`生成最终文件 ${p.percent}%${msg}`);
+        });
+      }
+    }
+    $("download").textContent = "导出中…";
+    showStatus(fmt === "png" ? "正在导出 PNG…" : `正在导出 ${fmt.toUpperCase()}…`);
+    const r = await fetch(`/api/export/${state.id}/${fmt}`);
     if (!r.ok) {
       let msg = "生成失败";
       try {
@@ -510,6 +595,7 @@ $("download").addEventListener("click", async (e) => {
       throw new Error(msg);
     }
     const blob = await r.blob();
+    const name = exportBaseName() + "." + fmt;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -518,11 +604,12 @@ $("download").addEventListener("click", async (e) => {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showStatus("文件已生成，请查收下载");
+    showStatus(`已导出 ${name}`);
   } catch (err) {
-    showStatus("下载失败：" + err.message, true);
+    showStatus("导出失败：" + err.message, true);
   } finally {
-    $("download").textContent = "下载结果";
+    $("download").textContent = oldText || "导出";
+    $("download").disabled = false;
   }
 });
 
@@ -549,7 +636,12 @@ async function toggleHighlight(row) {
   if (!base) return;
   showStatus("高亮中…");
   try {
-    const { dataUrl, matched } = await highlightImage(base, rgb, 140);
+    // 精确匹配：只高亮该颜色本身 + 它在文件里的真实透明度版本（从扫描结果取），
+    // 不再用固定 6 档透明度候选 + 宽容差，避免大面积重复高亮。
+    const oldHex = norm(row.querySelector(".oldhex").value);
+    const item = (state.colors || []).find((c) => norm(c.hex) === oldHex);
+    const opacities = item && item.opacities ? item.opacities : [];
+    const { dataUrl, matched } = await highlightImage(base, rgb, 30, opacities);
     if (!matched) {
       cancelHighlight();
       showStatus("图中未找到该颜色", true);
@@ -574,7 +666,7 @@ function cancelHighlight() {
   refreshView();
 }
 
-function highlightImage(dataUrl, rgb, tol) {
+function highlightImage(dataUrl, rgb, tol, opacities) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -588,15 +680,16 @@ function highlightImage(dataUrl, rgb, tol) {
         ctx.drawImage(img, 0, 0);
         const d = ctx.getImageData(0, 0, c.width, c.height);
         const p = d.data;
-        // 候选色：目标色本身 + 与白色按常见透明度混合（应对半透明/抗锯齿）
+        // 候选色：目标色本身 + 与白色按文件中的真实透明度混合
         const cands = [rgb];
-        for (const a of [0.8, 0.6, 0.4, 0.25, 0.12]) {
+        (opacities || []).forEach((a) => {
+          a = Math.max(0, Math.min(1, a));
           cands.push([
             Math.round(rgb[0] * a + 255 * (1 - a)),
             Math.round(rgb[1] * a + 255 * (1 - a)),
             Math.round(rgb[2] * a + 255 * (1 - a)),
           ]);
-        }
+        });
         let matched = 0;
         for (let i = 0; i < p.length; i += 4) {
           // 保护白色/浅色背景：保持原样，避免被“目标色+白色混合”候选色误命中全图提亮
@@ -691,6 +784,7 @@ async function loadSession(it) {
     const s = await pollStatus(it.id);
     if (!s.scan) throw new Error("该记录没有有效的扫描结果");
     state.id = it.id;
+    state.kind = it.kind || null;
     onScanReady(it.name, s.scan);
     if (s.apply) {
       state.after = s.apply.preview;
@@ -733,6 +827,7 @@ async function deleteHistory(sid, btn) {
       $("viewImg").removeAttribute("src");
       $("placeholder").hidden = false;
       $("download").hidden = true;
+      $("exportFmt").hidden = true;
       $("cancelHl").hidden = true;
       setAfterAvailable(false);
     }
