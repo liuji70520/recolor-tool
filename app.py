@@ -197,7 +197,7 @@ def build_df(items, replace=None):
 def on_upload(file, progress=gr.Progress()):
     if file is None:
         return gr.update(), gr.update(), gr.update(), None, "请先上传文件", ""
-    path = Path(file.name)
+    path = Path(file) if isinstance(file, (str, Path)) else Path(file.name)
     ext = path.suffix.lower()
     if ext not in ALLOWED:
         return gr.update(), gr.update(), gr.update(), None, f"不支持 {ext}，请上传 SVG/PDF/图片", ""
@@ -443,8 +443,9 @@ def on_export(state, fmt, progress=gr.Progress()):
 # ---------------------------------------------------------------- 界面
 
 css = """
-.upload-small { max-height: 44px !important; }
-.upload-small > * { padding: 4px 10px !important; }
+#upload-box { min-height: 48px !important; }
+#upload-box .wrap { min-height: 42px !important; }
+#upload-box label { font-size: 12px !important; }
 .stage-img img { max-height: 70vh; }
 """
 
@@ -469,10 +470,11 @@ with gr.Blocks(**blocks_kwargs) as demo:
             view_img = gr.Image(label="预览", interactive=False)
             cancel_hl = gr.Button("取消高亮")
         with gr.Column(scale=1):
-            file_in = gr.UploadButton(
-                "⇪ 上传 SVG / PDF / 图片（可拖拽）",
+            file_in = gr.File(
+                label="上传 SVG / PDF / 图片（可直接拖拽到框内）",
                 file_types=[".svg", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp"],
-                elem_classes=["upload-small"],
+                file_count="single",
+                elem_id="upload-box",
             )
             status = gr.Markdown()
             bg_label = gr.Markdown()
