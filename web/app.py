@@ -35,8 +35,23 @@ else:
     sys.path.insert(0, str(BASE.parent))
 import recolor  # noqa: E402
 
-SESSIONS = Path(os.environ.get("SESSIONS_DIR", str(BASE / "sessions")))
-SESSIONS.mkdir(exist_ok=True)
+def _default_sessions_dir():
+    """exe 运行时默认存到用户目录，避免“从临时目录解压启动后被系统清理”导致
+    会话目录/运行时文件丢失；开发版仍存在 web/sessions。"""
+    if getattr(sys, "frozen", False):
+        try:
+            local = os.environ.get("LOCALAPPDATA")
+            if local:
+                d = Path(local) / "RecolorTool" / "sessions"
+                d.mkdir(parents=True, exist_ok=True)
+                return d
+        except Exception:
+            pass
+    return BASE / "sessions"
+
+
+SESSIONS = Path(os.environ.get("SESSIONS_DIR", str(_default_sessions_dir())))
+SESSIONS.mkdir(parents=True, exist_ok=True)
 RASTER_EXTS = recolor.RASTER_EXTS
 ALLOWED = {".pdf", ".svg"} | RASTER_EXTS
 SID_RE = re.compile(r"^[0-9a-f]{12}$")
@@ -400,6 +415,7 @@ def api_upload():
 
     sid = uuid.uuid4().hex[:12]
     d = _session_dir(sid)
+    SESSIONS.mkdir(parents=True, exist_ok=True)
     d.mkdir()
     src = d / ("original" + ext)
     f.save(src)

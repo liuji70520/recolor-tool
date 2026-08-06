@@ -40,7 +40,8 @@ python app.py
 产物在 `dist\RecolorTool\`，把这个文件夹整个发给对方：
 
 - 双击 `RecolorTool.exe` 即自动启动服务并打开浏览器（无需装 Python）
-- 端口被占用会自动换空闲端口；文件保存在 exe 旁边的 `sessions\`（7 天自动清理）
+- 端口被占用会自动换空闲端口；会话保存在 `%LOCALAPPDATA%\RecolorTool\sessions`
+  （7 天自动清理）
 - 不想要了直接删除整个文件夹即可
 
 打包脚本里的 Python 路径是 `D:\envs\py312\python.exe`，换机器打包时改成自己的
