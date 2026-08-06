@@ -9,6 +9,7 @@
 
 import os
 import sys
+import traceback
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
@@ -18,13 +19,30 @@ sys.path.insert(0, str(BASE))
 os.environ.setdefault("AUTO_OPEN", "0")
 os.environ.setdefault("HOST", "0.0.0.0")
 
-from web.app import app  # noqa: E402
+
+def _pick_port():
+    """HF 不同 SDK 运行时给的端口变量不一样，逐个兼容。"""
+    for name in ("PORT", "GRADIO_SERVER_PORT"):
+        v = os.environ.get(name)
+        if v:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                continue
+    return 7860
+
+
+def main():
+    from web.app import app  # noqa: E402
+
+    port = _pick_port()
+    print(f"[recolor-tool] 启动 Flask 网页版，端口 {port}", flush=True)
+    app.run(host=os.environ.get("HOST", "0.0.0.0"), port=port, threaded=True)
 
 
 if __name__ == "__main__":
-    port = int(
-        os.environ.get("PORT")
-        or os.environ.get("GRADIO_SERVER_PORT")
-        or "7860"
-    )
-    app.run(host=os.environ.get("HOST", "0.0.0.0"), port=port, threaded=True)
+    try:
+        main()
+    except Exception:
+        print("[recolor-tool] 启动失败：\n" + traceback.format_exc(), flush=True)
+        raise
