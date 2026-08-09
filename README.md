@@ -12,7 +12,30 @@ pinned: false
 适用场景：大数据图重新跑一次要很久，你只想快速试几套配色。直接对导出的
 `PDF` / `SVG` 文件换色，秒出结果，不用重跑流程。
 
-## 网页版（推荐）
+## 快速使用（二选一）
+
+### 方式一：下载压缩包（Windows，免安装）
+
+最新版压缩包（约 46MB，内含单文件 `RecolorTool.exe` + 使用说明）：
+
+直接下载：
+
+```bash
+curl -L -o RecolorTool.zip https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v1.8.0.zip
+```
+
+解压后双击 `RecolorTool.exe`，浏览器自动打开即可使用（单文件自解压运行，
+放在任意目录都能跑，无需安装 Python）。
+
+### 方式二：网页版（在线使用，无需下载）
+
+打开 **https://liu-ji-recolor-tool.hf.space/** 即可使用。
+
+两种方式功能一致：上传 SVG / PDF / 图片 → 自动扫色 → 颜色映射表
+（点击颜色列即高亮）→ 应用配色实时预览 → 导出 PDF / SVG / PNG / 颜色代码
+（CSV / JSON）。
+
+## 本地网页版（Flask）
 
 图形界面，支持拖拽上传、自动扫色、颜色映射表、前后预览对比、一键下载：
 

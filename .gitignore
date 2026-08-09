@@ -5,6 +5,8 @@ __pycache__/
 .ghtoken
 build/
 dist/
+build-onefile/
+dist-onefile/
 *.spec
 nuitka-build.log
 nuitka-crash-report.xml
