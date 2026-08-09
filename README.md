@@ -74,8 +74,8 @@ python app.py
   （7 天自动清理）
 - 不想要了直接删除 exe 即可
 
-打包脚本里的 Python 路径是 `D:\envs\py312\python.exe`，换机器打包时改成自己的
-环境即可（需安装 `pip install flask pymupdf pikepdf numpy pillow pyinstaller`；
+打包脚本默认调用 `python` 命令（脚本顶部 `$py` 变量可改成你自己的 Python
+路径；需安装 `pip install flask pymupdf pikepdf numpy pillow pyinstaller`；
 构建环境里若装有 gradio/pandas，脚本会自动排除，不影响体积）。
 
 ## 三步工作流

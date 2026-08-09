@@ -2,7 +2,7 @@
 # 不依赖旁边的 _internal 文件夹——从任何目录（包括临时解压目录）都能正常跑。
 $ErrorActionPreference = "Stop"
 
-$py = "D:\envs\py312\python.exe"
+$py = "python"  # 改成你自己的 Python 可执行文件路径
 
 & $py -m PyInstaller `
   --noconfirm `
@@ -12,7 +12,7 @@ $py = "D:\envs\py312\python.exe"
   --name "RecolorTool" `
   --add-data "web\templates;templates" `
   --add-data "web\static;static" `
-  --paths "D:\vibe-coding\recolor-tool" `
+  --paths "." `
   --collect-all fitz `
   --collect-all pikepdf `
   --hidden-import recolor `
