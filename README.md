@@ -24,6 +24,9 @@ pinned: false
 curl -L -o RecolorTool.zip https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v1.8.0.zip
 ```
 
+> 注：仓库当前为私有，下载需 GitHub 登录（浏览器直接打开链接即可）；仓库公开后
+> 上述命令对任何人都可用。
+
 解压后双击 `RecolorTool.exe`，浏览器自动打开即可使用（单文件自解压运行，
 放在任意目录都能跑，无需安装 Python）。
 
