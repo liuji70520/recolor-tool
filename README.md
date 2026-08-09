@@ -16,6 +16,8 @@ pinned: false
 
 ### 方式一：下载压缩包（Windows，免安装）
 
+[![下载 RecolorTool v1.8.0](https://raw.githubusercontent.com/liuji70520/recolor-tool/main/docs/btn-download.svg)](https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v1.8.0.zip)
+
 最新版压缩包（约 46MB，内含单文件 `RecolorTool.exe` + 使用说明）：
 
 直接下载：
@@ -30,6 +32,8 @@ curl -L -o RecolorTool.zip https://github.com/liuji70520/recolor-tool/releases/l
 放在任意目录都能跑，无需安装 Python）。
 
 ### 方式二：网页版（在线使用，无需下载）
+
+[![打开网页版](https://raw.githubusercontent.com/liuji70520/recolor-tool/main/docs/btn-web.svg)](https://liu-ji-recolor-tool.hf.space/)
 
 打开 **https://liu-ji-recolor-tool.hf.space/** 即可使用。
 
