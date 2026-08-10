@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -59,6 +60,8 @@ MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_MB", "500")) * 1024 * 1024
 HISTORY_DAYS = int(os.environ.get("HISTORY_DAYS", "7"))
 _active_jobs = set()
 _active_lock = threading.Lock()
+_SERVER = None
+_SHUTDOWN = threading.Event()
 
 app = Flask(
     __name__,
@@ -642,6 +645,25 @@ def api_export(sid, fmt):
         return jsonify(error=f"导出失败：{e}"), 500
 
 
+@app.post("/api/shutdown")
+def api_shutdown():
+    """让新实例优雅关闭旧实例（替换模式：新开一个，旧的退出）。"""
+    if request.remote_addr not in ("127.0.0.1", "::1"):
+        return jsonify(error="拒绝"), 403
+
+    def _stop():
+        time.sleep(0.3)
+        try:
+            if _SERVER is not None:
+                _SERVER.shutdown()
+        except Exception:
+            pass
+        _SHUTDOWN.set()
+
+    threading.Thread(target=_stop, daemon=True).start()
+    return jsonify(ok=True)
+
+
 def _find_free_port(preferred):
     """找从 preferred 起第一个空闲端口，避免“端口被占用打不开”。"""
     for port in range(preferred, preferred + 30):
@@ -724,10 +746,88 @@ def _port_healthy(port, timeout=2.0):
 _MUTEX_HANDLE = None
 
 
-def _already_running():
-    """Windows 命名互斥体：已有实例且端口可访问时，打开它的浏览器并退出。
-    端口文件缺失或端口不通（例如开发版占用互斥体、实例已退出但端口文件残留）
-    时继续启动新实例，避免“双击 exe 没反应”。"""
+def _pid_file():
+    return PORT_FILE.parent / "pid.txt"
+
+
+def _write_pid():
+    try:
+        _pid_file().write_text(str(os.getpid()), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _pid_on_port(port):
+    """用 netstat 找监听 127.0.0.1:port 的进程 PID（挂死旧实例的兜底）。"""
+    try:
+        out = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and parts[3] == "LISTENING":
+                addr = parts[1]
+                if addr.startswith("127.0.0.1:") and addr.endswith(f":{port}"):
+                    return int(parts[4])
+    except Exception:
+        pass
+    return None
+
+
+def _kill_pid(pid):
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/PID", str(pid)],
+            capture_output=True,
+            timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        pass
+
+
+def _kill_stale_pid():
+    """按 pid.txt 强杀可能挂死、没绑上端口的旧实例。"""
+    try:
+        old_pid = int(_pid_file().read_text(encoding="utf-8").strip())
+        if old_pid != os.getpid():
+            _kill_pid(old_pid)
+    except Exception:
+        pass
+
+
+def _shutdown_old(port):
+    """先请求旧实例优雅关闭，等端口释放；超时则按端口/pid 强杀。"""
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{int(port)}/api/shutdown", method="POST"
+        )
+        urllib.request.urlopen(req, timeout=3).read()
+    except Exception:
+        pass
+    t0 = time.time()
+    while time.time() - t0 < 8:
+        try:
+            with socket.create_connection(("127.0.0.1", int(port)), timeout=0.5):
+                time.sleep(0.3)
+                continue
+        except OSError:
+            return
+    pid = _pid_on_port(port)
+    if pid:
+        _kill_pid(pid)
+        time.sleep(1)
+    _kill_stale_pid()
+
+
+def _replace_old():
+    """替换模式：检测到旧实例就把它关掉，让新实例全新建起。"""
     global _MUTEX_HANDLE
     if sys.platform != "win32" or os.environ.get("RECOLOR_NO_MUTEX") == "1":
         return False
@@ -742,16 +842,16 @@ def _already_running():
             ctypes.c_wchar_p,
         ]
         _MUTEX_HANDLE = kernel32.CreateMutexW(None, False, "RecolorTool_SingleInstance")
-        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS → 有旧实例
             try:
                 port = int(PORT_FILE.read_text(encoding="utf-8").strip())
                 if _port_healthy(port):
-                    webbrowser.open(f"http://127.0.0.1:{port}")
-                    return True
+                    _shutdown_old(port)
+                else:
+                    _kill_stale_pid()
             except Exception:
                 pass
-            # 有互斥体但端口不可用：不退出，继续启动新实例
-            return False
+            return True
     except Exception:
         pass
     return False
@@ -783,22 +883,29 @@ def _fatal(msg):
 
 
 def _main():
+    global _SERVER
     _log("启动中...")
     _cleanup_sessions()
     host = os.environ.get("HOST", "127.0.0.1")
     preferred = int(os.environ.get("PORT", "8377"))
-    if _already_running():
-        _log("检测到已有可用实例，复用并退出")
-        sys.exit(0)
+    if _replace_old():
+        _log("已关闭旧实例，全新启动")
     port = _find_free_port(preferred)
     _write_port(port)
+    _write_pid()
     _log(f"绑定端口 {port}")
+    browser_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
     # 打包成 exe 后没有控制台，启动时自动打开浏览器
     if os.environ.get("AUTO_OPEN", "1") == "1":
-        browser_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
         _open_browser(f"http://{browser_host}:{port}")
-    print(f"一键换色已启动: http://127.0.0.1:{port}  (Ctrl+C 退出)")
-    app.run(host=host, port=port, threaded=True)
+    from werkzeug.serving import make_server
+
+    _SERVER = make_server(host, port, app, threaded=True)
+    threading.Thread(target=_SERVER.serve_forever, daemon=True).start()
+    _log(f"服务已启动: http://{browser_host}:{port}")
+    print(f"一键换色已启动: http://{browser_host}:{port}  (Ctrl+C 退出)")
+    _SHUTDOWN.wait()
+    _log("服务已停止")
 
 
 if __name__ == "__main__":
