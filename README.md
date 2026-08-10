@@ -38,6 +38,10 @@ curl -L -o RecolorTool.zip https://github.com/liuji70520/recolor-tool/releases/l
 再次双击 exe 会**先关闭旧实例、再全新启动**（历史会话保留在
 `%LOCALAPPDATA%\RecolorTool\sessions`，不会丢）。
 
+> 如果双击 exe 没反应（常见于系统临时目录被清理工具清空），请改用 zip 里的
+> **启动RecolorTool.cmd**：它会把程序自解压目录改到 `%LOCALAPPDATA%\RecolorTool\tmp`，
+> 彻底避开临时目录清理。
+
 ### 方式二：网页版（在线使用，无需下载）
 
 [![打开网页版](https://raw.githubusercontent.com/liuji70520/recolor-tool/main/docs/btn-web.svg)](https://liu-ji-recolor-tool.hf.space/)
