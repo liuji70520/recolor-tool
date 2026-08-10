@@ -655,9 +655,21 @@ def _find_free_port(preferred):
 
 
 def _open_browser(url):
+    """等端口真正可连后再开浏览器，避免“浏览器先开、服务还没起来”打不开。"""
     def _open():
-        time.sleep(1.2)
         try:
+            from urllib.parse import urlsplit
+
+            parts = urlsplit(url)
+            host = parts.hostname or "127.0.0.1"
+            port = parts.port or 80
+            t0 = time.time()
+            while time.time() - t0 < 25:
+                try:
+                    with socket.create_connection((host, port), timeout=1.0):
+                        break
+                except OSError:
+                    time.sleep(0.3)
             webbrowser.open(url)
         except Exception:
             pass
@@ -709,18 +721,28 @@ def _port_healthy(port, timeout=2.0):
         return False
 
 
+_MUTEX_HANDLE = None
+
+
 def _already_running():
     """Windows 命名互斥体：已有实例且端口可访问时，打开它的浏览器并退出。
     端口文件缺失或端口不通（例如开发版占用互斥体、实例已退出但端口文件残留）
     时继续启动新实例，避免“双击 exe 没反应”。"""
+    global _MUTEX_HANDLE
     if sys.platform != "win32" or os.environ.get("RECOLOR_NO_MUTEX") == "1":
         return False
     try:
         import ctypes
 
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.CreateMutexW(None, False, "RecolorTool_SingleInstance")
-        if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        kernel32.CreateMutexW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_bool,
+            ctypes.c_wchar_p,
+        ]
+        _MUTEX_HANDLE = kernel32.CreateMutexW(None, False, "RecolorTool_SingleInstance")
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
             try:
                 port = int(PORT_FILE.read_text(encoding="utf-8").strip())
                 if _port_healthy(port):
@@ -733,6 +755,16 @@ def _already_running():
     except Exception:
         pass
     return False
+
+
+def _log(msg):
+    """写启动日志（%LOCALAPPDATA%\\RecolorTool\\startup.log），方便排查“没反应”。"""
+    try:
+        PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with (PORT_FILE.parent / "startup.log").open("a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    except Exception:
+        pass
 
 
 def _fatal(msg):
@@ -751,13 +783,16 @@ def _fatal(msg):
 
 
 def _main():
+    _log("启动中...")
     _cleanup_sessions()
     host = os.environ.get("HOST", "127.0.0.1")
     preferred = int(os.environ.get("PORT", "8377"))
     if _already_running():
+        _log("检测到已有可用实例，复用并退出")
         sys.exit(0)
     port = _find_free_port(preferred)
     _write_port(port)
+    _log(f"绑定端口 {port}")
     # 打包成 exe 后没有控制台，启动时自动打开浏览器
     if os.environ.get("AUTO_OPEN", "1") == "1":
         browser_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
@@ -772,5 +807,7 @@ if __name__ == "__main__":
     except Exception:
         import traceback
 
-        _fatal(traceback.format_exc())
+        tb = traceback.format_exc()
+        _log("启动失败：" + tb.replace("\n", " | "))
+        _fatal(tb)
         raise

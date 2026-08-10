@@ -16,20 +16,25 @@ pinned: false
 
 ### 方式一：下载压缩包（Windows，免安装）
 
-[![下载 RecolorTool v1.8.0](https://raw.githubusercontent.com/liuji70520/recolor-tool/main/docs/btn-download.svg)](https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v1.8.0.zip)
+[![下载 RecolorTool v1.9.0](https://raw.githubusercontent.com/liuji70520/recolor-tool/main/docs/btn-download.svg)](https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v1.9.0.exe)
 
-最新版压缩包（约 46MB，内含单文件 `RecolorTool.exe` + 使用说明）：
-
-直接下载：
+直接下载单文件 exe（约 46MB，**下载后直接双击运行，不要从压缩包里运行**）：
 
 ```bash
-curl -L -o RecolorTool.zip https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v1.8.0.zip
+curl -L -o RecolorTool.exe https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v1.9.0.exe
+```
+
+也可以下载 zip（exe + 使用说明）：[RecolorTool-v1.9.0.zip](https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v1.9.0.zip)
+
+命令行下载 zip：
+
+```bash
+curl -L -o RecolorTool.zip https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v1.9.0.zip
 ```
 
 > 注：仓库已公开，任何人都可直接运行上面的命令下载，无需登录。
 
-解压后双击 `RecolorTool.exe`，浏览器自动打开即可使用（单文件自解压运行，
-放在任意目录都能跑，无需安装 Python）。
+浏览器自动打开即可使用（单文件自解压运行，放在任意目录都能跑，无需安装 Python）。
 
 ### 方式二：网页版（在线使用，无需下载）
 
