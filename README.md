@@ -1,11 +1,4 @@
----
-title: 一键换色 SVG/PDF/图片
-emoji: 🎨
-colorFrom: indigo
-colorTo: pink
-sdk: gradio
-pinned: false
----
+
 
 # recolor-tool — SVG / PDF 一键换色
 
