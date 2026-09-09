@@ -36,7 +36,7 @@ curl -L -o RecolorTool.zip https://github.com/liuji70520/recolor-tool/releases/l
 > 彻底避开临时目录清理。
 
 ### 方式二：网页版（在线使用，无需下载）
-
+### ！！太久没维护可能会关闭，可以issue提醒
 [![打开网页版](https://raw.githubusercontent.com/liuji70520/recolor-tool/main/docs/btn-web.svg)](https://liu-ji-recolor-tool.hf.space/)
 
 打开 **https://liu-ji-recolor-tool.hf.space/** 即可使用。
