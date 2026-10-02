@@ -705,9 +705,10 @@ function highlightImage(dataUrl, rgb, tol, opacities) {
             if (dist < best) best = dist;
           }
           if (best <= tol) {
-            p[i] = Math.min(255, p[i] + 80);
-            p[i + 1] = Math.min(255, p[i + 1] + 80);
-            p[i + 2] = Math.min(255, p[i + 2] + 80);
+            // 命中：涂成醒目的红色（原先是整体提亮 +80，浅色图上看不出来）
+            p[i] = 255;
+            p[i + 1] = 25;
+            p[i + 2] = 25;
             matched++;
           } else {
             p[i] = Math.round(p[i] * 0.55);
