@@ -9,27 +9,21 @@
 
 ### 方式一：Windows 桌面版（独立窗口，即开即用）
 
-**安装版**（推荐，像正常软件一样装到开始菜单）：
+[![下载 Windows 版](https://raw.githubusercontent.com/liuji70520/recolor-tool/main/docs/btn-download.svg)](https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-Setup-v2.1.0.exe)
 
-```bash
-curl -L -o RecolorTool-Setup.exe https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-Setup-v2.1.0.exe
-```
-
-双击安装（按用户安装，不需要管理员），从开始菜单或桌面快捷方式启动。
-
-**便携版**（免安装，解压即用）：
-
-```bash
-curl -L -o RecolorTool-portable.zip https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v2.1.0-portable.zip
-```
-
-解压后双击 `RecolorTool.exe`（或文件夹里的 `启动RecolorTool.cmd`）。
+- **安装版**（推荐，像正常软件一样装到开始菜单）：
+  [RecolorTool-Setup-v2.1.0.exe](https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-Setup-v2.1.0.exe)
+  —— 双击安装（按用户安装，不需要管理员），之后从开始菜单或桌面快捷方式启动。
+- **便携版**（免安装，解压即用）：
+  [RecolorTool-v2.1.0-portable.zip](https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v2.1.0-portable.zip)
+  —— 解压后双击 `RecolorTool.exe`（或文件夹里的 `启动RecolorTool.cmd`）。
 
 双击后弹出独立程序窗口（不再开浏览器标签页），**关掉窗口程序就退出，
 端口随之释放，不会在后台残留**。历史会话保留在
 `%LOCALAPPDATA%\RecolorTool\sessions`（7 天自动清理）。
 
-> 注：仓库已公开，任何人都可直接运行上面的命令下载，无需登录。
+> 注：仓库已公开，点击即可下载，无需登录。历史版本见
+> [Releases](https://github.com/liuji70520/recolor-tool/releases) 页面。
 
 ### 方式二：网页版（在线使用，无需下载）
 ### ！！太久没维护可能会关闭，可以issue提醒
@@ -69,52 +63,6 @@ python app.py
 | `IDLE_EXIT_SECONDS` | `120` | 页面断开多少秒后自动退出，`0` = 关闭 |
 | `MAX_UPLOAD_MB` | `500` | 上传文件大小上限 |
 | `HISTORY_DAYS` | `7` | 历史会话保留天数 |
-
-## 打包成 exe（发给别人）
-
-```powershell
-.\build_exe.ps1          # PyInstaller onedir → dist\RecolorTool\
-.\build_installer.ps1    # 再套一层 Inno Setup → 安装程序
-```
-
-`build_exe.ps1` 用 PyInstaller 打成 onedir 目录（**不是单文件自解压**，启动快）：
-`dist\RecolorTool\RecolorTool.exe` 连同旁边的 `_internal` 文件夹一起发就是便携版
-（压缩成 zip 即可分发）。打包配置在 `RecolorTool.spec`。
-
-`build_installer.ps1` 调用 Inno Setup（需先 `winget install JRSoftware.InnoSetup`）
-生成 `RecolorTool-Setup-v2.1.0.exe`：按用户安装到
-`%LOCALAPPDATA%\Programs\RecolorTool`（不需要管理员），创建开始菜单和可选的
-桌面快捷方式，自带卸载程序。
-
-打包环境依赖：`pip install flask pymupdf pikepdf numpy pillow pywebview
-pythonnet pyinstaller`。打包产物在干净的 Win10/11 上即可运行，只要系统有
-WebView2 运行时（Win11 自带；安装程序检测到缺失时会提示并引导安装）。
-
-## 三步工作流
-
-```bash
-# 1) 自动列出文件里用到的所有颜色（PDF 还会显示透明度）
-python recolor.py scan figure.pdf
-
-# 2) 生成颜色映射模板（等号右边改成你想要的新颜色即可）
-python recolor.py template figure.pdf -o mapping.json
-
-# 3) 一键换色，透明度默认不变
-python recolor.py apply figure.pdf mapping.json -o figure-new.pdf
-```
-
-`mapping.json` 长这样（键 = 原颜色，值 = 新颜色）：
-
-```json
-{
-  "#e41a1c": "#00b8d9",
-  "#377eb8": "#f28500",
-  "rgb(255, 0, 0)": "#4daf4a"
-}
-```
-
-颜色写法支持 `#RGB`、`#RRGGBB`、`#RRGGBBAA`（8 位时只换 RGB、保留 alpha）、
-`rgb(r,g,b)` 等。透明度通过文件里的 opacity / ExtGState 保存，换色不碰它们。
 
 ## 位图（PNG / JPG / GIF / BMP / TIFF / WebP）
 
@@ -162,23 +110,3 @@ python recolor.py apply figure.jpg mapping.json -o figure-new.jpg      # 精确
 颜色映射表还标注了每个颜色的**类型**：填充 / 描边 / 填充+描边（位图为“像素”）。
 文字、轴线、引线这类装饰元素基本都是描边，鼠标悬停徽标可查看 填充×N 描边×N
 的明细，方便判断哪些是图的主要元素、哪些可以直接删掉不映射。
-
-## 部署
-
-注意：GitHub Pages 只能托管静态页面，跑不了本工具的 Python 后端。
-推荐用 Hugging Face Spaces（免费 CPU 档 16GB 内存，能处理超大 PDF）。
-空间 SDK 选择 **Gradio**（仓库根目录的 `app.py` 就是 Gradio 版界面，兼容
-ZeroGPU）。
-
-### 步骤（Hugging Face Spaces，推荐）
-
-1. 在 GitHub 上新建仓库（如 `recolor-tool`），把本目录内容推上去；
-2. 打开 https://huggingface.co/new-space ，创建 Space：SDK 选 **Gradio**，
-   并把 GitHub 仓库连进来（或直接用 Git 推送）；
-3. 等自动构建完成，打开生成的 `https://你的用户名-recolor-tool.hf.space` 即可使用；
-4. 可设置环境变量：`MAX_UPLOAD_MB`（上传上限，默认 500）、`HISTORY_DAYS`（默认 7）。
-
-Gradio 版（`app.py`）界面贴近 Flask 网页版：主图预览占主要区域、小文件上传、
-颜色映射表带**色块**、点击“原颜色 / 替换颜色”列即高亮对应颜色、应用配色自动
-刷新预览，支持导出 PDF / SVG / PNG / 颜色代码（CSV / JSON）和 PDF 懒加载生成。
-本地 Flask 版（`web/`）功能更全，可在本地 `python web/app.py` 使用。
