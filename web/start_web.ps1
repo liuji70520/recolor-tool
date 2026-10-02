@@ -1,4 +1,4 @@
-# 一键启动网页版换色工具（app.py 启动后会自动打开浏览器）
+﻿# 开发用：启动本地网页版换色工具
+# 默认弹独立窗口（pywebview + WebView2）；设 $env:RECOLOR_UI="browser" 改用浏览器调试。
 $ErrorActionPreference = "Stop"
-$p = Start-Process python -ArgumentList "app.py" -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
-Write-Host "已启动 (PID $($p.Id))，浏览器会自动打开；若端口被占用会自动换空闲端口。"
+python "$PSScriptRoot\app.py"

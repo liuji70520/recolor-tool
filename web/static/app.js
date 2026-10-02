@@ -840,3 +840,32 @@ async function deleteHistory(sid, btn) {
 }
 
 refreshHistory();
+
+// ---- 生命周期：心跳 + 退出按钮 ----
+// 页面还在就每 5s 报活；服务端超过 IDLE_EXIT_SECONDS 没收到心跳就自动退出。
+const HEARTBEAT_MS = 5000;
+let _dead = false;
+async function ping() {
+  if (_dead) return;
+  try {
+    const r = await fetch("/api/ping", { method: "POST" });
+    if (r.status === 410) _dead = true; // 服务端已在退出
+  } catch (_) {}
+}
+setInterval(ping, HEARTBEAT_MS);
+ping();
+
+const quitBtn = $("quitBtn");
+if (quitBtn) {
+  quitBtn.addEventListener("click", async () => {
+    quitBtn.disabled = true;
+    try {
+      await fetch("/api/shutdown", { method: "POST" });
+      document.body.innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#666;font-size:15px">已退出，可以直接关闭此窗口。</div>';
+    } catch (e) {
+      quitBtn.disabled = false;
+      alert("退出失败：" + e.message);
+    }
+  });
+}

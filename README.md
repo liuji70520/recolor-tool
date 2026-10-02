@@ -7,33 +7,29 @@
 
 ## 快速使用（二选一）
 
-### 方式一：下载压缩包（Windows，免安装）
+### 方式一：Windows 桌面版（独立窗口，即开即用）
 
-[![下载 RecolorTool v2.0.0](https://raw.githubusercontent.com/liuji70520/recolor-tool/main/docs/btn-download.svg)](https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v2.0.0.exe)
-
-直接下载单文件 exe（约 46MB，**下载后直接双击运行，不要从压缩包里运行**）：
+**安装版**（推荐，像正常软件一样装到开始菜单）：
 
 ```bash
-curl -L -o RecolorTool.exe https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v2.0.0.exe
+curl -L -o RecolorTool-Setup.exe https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-Setup-v2.1.0.exe
 ```
 
-也可以下载 zip（exe + 使用说明）：[RecolorTool-v2.0.0.zip](https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v2.0.0.zip)
+双击安装（按用户安装，不需要管理员），从开始菜单或桌面快捷方式启动。
 
-命令行下载 zip：
+**便携版**（免安装，解压即用）：
 
 ```bash
-curl -L -o RecolorTool.zip https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v2.0.0.zip
+curl -L -o RecolorTool-portable.zip https://github.com/liuji70520/recolor-tool/releases/latest/download/RecolorTool-v2.1.0-portable.zip
 ```
+
+解压后双击 `RecolorTool.exe`（或文件夹里的 `启动RecolorTool.cmd`）。
+
+双击后弹出独立程序窗口（不再开浏览器标签页），**关掉窗口程序就退出，
+端口随之释放，不会在后台残留**。历史会话保留在
+`%LOCALAPPDATA%\RecolorTool\sessions`（7 天自动清理）。
 
 > 注：仓库已公开，任何人都可直接运行上面的命令下载，无需登录。
-
-浏览器自动打开即可使用（单文件自解压运行，放在任意目录都能跑，无需安装 Python）。
-再次双击 exe 会**先关闭旧实例、再全新启动**（历史会话保留在
-`%LOCALAPPDATA%\RecolorTool\sessions`，不会丢）。
-
-> 如果双击 exe 没反应（常见于系统临时目录被清理工具清空），请改用 zip 里的
-> **启动RecolorTool.cmd**：它会把程序自解压目录改到 `%LOCALAPPDATA%\RecolorTool\tmp`，
-> 彻底避开临时目录清理。
 
 ### 方式二：网页版（在线使用，无需下载）
 ### ！！太久没维护可能会关闭，可以issue提醒
@@ -58,29 +54,41 @@ cd recolor-tool/web
 python app.py
 ```
 
-然后浏览器打开 `http://127.0.0.1:8377` 即可。默认只允许本机访问；
-想让局域网内其他人也能用，把 `app.py` 里的 `host="127.0.0.1"` 改成
-`host="0.0.0.0"`（部署到服务器同理）。启动后会自动打开浏览器；
-8377 被占用时会自动换空闲端口（可用环境变量 `PORT` 指定，如 `PORT=9000`，
-`AUTO_OPEN=0` 可关闭自动开浏览器）。
+启动后默认弹出独立程序窗口（**关掉窗口程序即退出、端口随之释放**，不会在后台
+残留）；没有 pywebview / WebView2 时自动回退为打开浏览器标签页。端口由系统
+随机分配，不存在端口占用问题，可以同时开多个实例互不影响。
+
+可用环境变量（都不是必需的）：
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `PORT` | `0`（随机） | 固定端口，局域网共享时用，如 `PORT=9000` |
+| `HOST` | `127.0.0.1` | 改成 `0.0.0.0` 可让局域网访问 |
+| `RECOLOR_UI` | `window` | `browser` = 强制用浏览器标签页 |
+| `AUTO_OPEN` | `1` | 浏览器模式下 `0` = 不自动打开浏览器 |
+| `IDLE_EXIT_SECONDS` | `120` | 页面断开多少秒后自动退出，`0` = 关闭 |
+| `MAX_UPLOAD_MB` | `500` | 上传文件大小上限 |
+| `HISTORY_DAYS` | `7` | 历史会话保留天数 |
 
 ## 打包成 exe（发给别人）
 
 ```powershell
-.\build_exe_pyinstaller.ps1
+.\build_exe.ps1          # PyInstaller onedir → dist\RecolorTool\
+.\build_installer.ps1    # 再套一层 Inno Setup → 安装程序
 ```
 
-产物是单个 `dist\RecolorTool.exe`（约 46MB），把这个文件发给对方即可：
+`build_exe.ps1` 用 PyInstaller 打成 onedir 目录（**不是单文件自解压**，启动快）：
+`dist\RecolorTool\RecolorTool.exe` 连同旁边的 `_internal` 文件夹一起发就是便携版
+（压缩成 zip 即可分发）。打包配置在 `RecolorTool.spec`。
 
-- 双击 `RecolorTool.exe` 即自动启动服务并打开浏览器（单文件自解压运行，
-  从任何目录启动都行，无需解压安装）
-- 端口被占用会自动换空闲端口；会话保存在 `%LOCALAPPDATA%\RecolorTool\sessions`
-  （7 天自动清理）
-- 不想要了直接删除 exe 即可
+`build_installer.ps1` 调用 Inno Setup（需先 `winget install JRSoftware.InnoSetup`）
+生成 `RecolorTool-Setup-v2.1.0.exe`：按用户安装到
+`%LOCALAPPDATA%\Programs\RecolorTool`（不需要管理员），创建开始菜单和可选的
+桌面快捷方式，自带卸载程序。
 
-打包脚本默认调用 `python` 命令（脚本顶部 `$py` 变量可改成你自己的 Python
-路径；需安装 `pip install flask pymupdf pikepdf numpy pillow pyinstaller`；
-构建环境里若装有 gradio/pandas，脚本会自动排除，不影响体积）。
+打包环境依赖：`pip install flask pymupdf pikepdf numpy pillow pywebview
+pythonnet pyinstaller`。打包产物在干净的 Win10/11 上即可运行，只要系统有
+WebView2 运行时（Win11 自带；安装程序检测到缺失时会提示并引导安装）。
 
 ## 三步工作流
 

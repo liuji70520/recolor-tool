@@ -12,3 +12,5 @@ nuitka-build.log
 nuitka-crash-report.xml
 run_nuitka.bat
 run_nuitka.py
+dist-installer/
+dist-nuitka/

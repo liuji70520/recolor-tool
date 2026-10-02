@@ -12,8 +12,6 @@ import json
 import os
 import re
 import shutil
-import socket
-import subprocess
 import sys
 import threading
 import time
@@ -58,10 +56,13 @@ ALLOWED = {".pdf", ".svg"} | RASTER_EXTS
 SID_RE = re.compile(r"^[0-9a-f]{12}$")
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_MB", "500")) * 1024 * 1024
 HISTORY_DAYS = int(os.environ.get("HISTORY_DAYS", "7"))
+IDLE_EXIT_SECONDS = int(os.environ.get("IDLE_EXIT_SECONDS", "120"))  # 0=关闭空闲自动退出
 _active_jobs = set()
 _active_lock = threading.Lock()
 _SERVER = None
 _SHUTDOWN = threading.Event()
+_LAST_PING = 0.0
+_PING_SEEN = False
 
 app = Flask(
     __name__,
@@ -645,223 +646,95 @@ def api_export(sid, fmt):
         return jsonify(error=f"导出失败：{e}"), 500
 
 
-@app.post("/api/shutdown")
-def api_shutdown():
-    """让新实例优雅关闭旧实例（替换模式：新开一个，旧的退出）。"""
-    if request.remote_addr not in ("127.0.0.1", "::1"):
-        return jsonify(error="拒绝"), 403
-
-    def _stop():
-        time.sleep(0.3)
-        try:
-            if _SERVER is not None:
-                _SERVER.shutdown()
-        except Exception:
-            pass
-        _SHUTDOWN.set()
-
-    threading.Thread(target=_stop, daemon=True).start()
+@app.post("/api/ping")
+def api_ping():
+    """前端心跳：页面还在就报活，用于空闲自动退出。"""
+    global _LAST_PING, _PING_SEEN
+    if _SHUTDOWN.is_set():
+        # 已决定退出：拒绝心跳，避免另一个标签页把要退出的实例“救活”
+        return jsonify(ok=False, shutting_down=True), 410
+    _LAST_PING = time.time()
+    _PING_SEEN = True
     return jsonify(ok=True)
 
 
-def _find_free_port(preferred):
-    """找从 preferred 起第一个空闲端口，避免“端口被占用打不开”。"""
-    for port in range(preferred, preferred + 30):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("127.0.0.1", port))
-                return port
-            except OSError:
-                continue
-    return preferred
+@app.post("/api/shutdown")
+def api_shutdown():
+    """退出：置信号，由主线程统一收尾（关窗口 + 关服务）。"""
+    if request.remote_addr not in ("127.0.0.1", "::1"):
+        return jsonify(error="拒绝"), 403
+    _SHUTDOWN.set()
+    return jsonify(ok=True)
 
 
-def _open_browser(url):
-    """等端口真正可连后再开浏览器，避免“浏览器先开、服务还没起来”打不开。"""
-    def _open():
+def _state_dir():
+    """运行时目录：%LOCALAPPDATA%\\RecolorTool（日志、会话都在这里）。"""
+    base = os.environ.get("RECOLOR_STATE_DIR")
+    if not base:
+        local = os.environ.get("LOCALAPPDATA")
+        base = str(Path(local) / "RecolorTool") if local else str(BASE)
+    try:
+        Path(base).mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return Path(base)
+
+
+def _cleanup_legacy_files():
+    """清掉旧版“抢占端口”机制留下的 port.txt / pid.txt。"""
+    for name in ("port.txt", "pid.txt"):
         try:
-            from urllib.parse import urlsplit
-
-            parts = urlsplit(url)
-            host = parts.hostname or "127.0.0.1"
-            port = parts.port or 80
-            t0 = time.time()
-            while time.time() - t0 < 25:
-                try:
-                    with socket.create_connection((host, port), timeout=1.0):
-                        break
-                except OSError:
-                    time.sleep(0.3)
-            webbrowser.open(url)
+            (_state_dir() / name).unlink()
         except Exception:
             pass
 
-    threading.Thread(target=_open, daemon=True).start()
 
-
-def _port_file():
-    """port.txt 放在用户级固定目录（%LOCALAPPDATA%\\RecolorTool）。
-    这样开发版和 exe、以及从不同文件夹解压的多个副本读到的都是同一个端口，
-    不会出现“各自写各自的 port.txt、互相读不到”的情况。"""
-    base = os.environ.get("RECOLOR_PORT_DIR")
-    if not base:
-        try:
-            local = os.environ.get("LOCALAPPDATA")
-            if local:
-                base = str(Path(local) / "RecolorTool")
-                Path(base).mkdir(parents=True, exist_ok=True)
-        except Exception:
-            base = None
-    if not base:
-        base = str(BASE)
-    return Path(base) / "port.txt"
-
-
-PORT_FILE = _port_file()
-
-
-def _write_port(port):
-    try:
-        PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        PORT_FILE.write_text(str(port), encoding="utf-8")
-    except Exception:
-        pass
-
-
-def _port_healthy(port, timeout=2.0):
-    """检查端口上的实例是否“真正可用”：除了能连上，还要能返回静态资源。
-    临时目录实例的页面还在、但 static 已被清理时，连接会成功却打不开完整页面，
-    此时不能复用，必须另开新实例，避免把浏览器重定向到坏页面。"""
-    try:
-        import urllib.request
-
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{int(port)}/static/app.js", timeout=timeout
-        ) as resp:
-            return len(resp.read(64)) > 0
-    except Exception:
-        return False
-
-
-_MUTEX_HANDLE = None
-
-
-def _pid_file():
-    return PORT_FILE.parent / "pid.txt"
-
-
-def _write_pid():
-    try:
-        _pid_file().write_text(str(os.getpid()), encoding="utf-8")
-    except Exception:
-        pass
-
-
-def _pid_on_port(port):
-    """用 netstat 找监听 127.0.0.1:port 的进程 PID（挂死旧实例的兜底）。"""
-    try:
-        out = subprocess.run(
-            ["netstat", "-ano", "-p", "tcp"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        ).stdout
-        for line in out.splitlines():
-            parts = line.split()
-            if len(parts) >= 5 and parts[3] == "LISTENING":
-                addr = parts[1]
-                if addr.startswith("127.0.0.1:") and addr.endswith(f":{port}"):
-                    return int(parts[4])
-    except Exception:
-        pass
-    return None
-
-
-def _kill_pid(pid):
-    try:
-        subprocess.run(
-            ["taskkill", "/F", "/PID", str(pid)],
-            capture_output=True,
-            timeout=10,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except Exception:
-        pass
-
-
-def _kill_stale_pid():
-    """按 pid.txt 强杀可能挂死、没绑上端口的旧实例。"""
-    try:
-        old_pid = int(_pid_file().read_text(encoding="utf-8").strip())
-        if old_pid != os.getpid():
-            _kill_pid(old_pid)
-    except Exception:
-        pass
-
-
-def _shutdown_old(port):
-    """先请求旧实例优雅关闭，等端口释放；超时则按端口/pid 强杀。"""
-    try:
-        import urllib.request
-
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{int(port)}/api/shutdown", method="POST"
-        )
-        urllib.request.urlopen(req, timeout=3).read()
-    except Exception:
-        pass
-    t0 = time.time()
-    while time.time() - t0 < 8:
-        try:
-            with socket.create_connection(("127.0.0.1", int(port)), timeout=0.5):
-                time.sleep(0.3)
-                continue
-        except OSError:
+def _idle_watchdog():
+    """页面长时间没动静就退出（IDLE_EXIT_SECONDS=0 关闭）。
+    收到过第一次心跳之后才开始计时，避免页面加载慢时误杀。"""
+    if IDLE_EXIT_SECONDS <= 0:
+        return
+    while not _SHUTDOWN.is_set():
+        time.sleep(1.0)
+        if not _PING_SEEN:
+            continue
+        if time.time() - _LAST_PING > IDLE_EXIT_SECONDS:
+            _log(f"空闲 {IDLE_EXIT_SECONDS}s，自动退出")
+            _SHUTDOWN.set()
             return
-    pid = _pid_on_port(port)
-    if pid:
-        _kill_pid(pid)
-        time.sleep(1)
-    _kill_stale_pid()
 
 
-def _replace_old():
-    """替换模式：检测到旧实例就把它关掉，让新实例全新建起。"""
-    global _MUTEX_HANDLE
-    if sys.platform != "win32" or os.environ.get("RECOLOR_NO_MUTEX") == "1":
-        return False
-    try:
-        import ctypes
+def _run_ui(url):
+    """打开界面并阻塞到用户关掉它：窗口模式关窗口即返回，进程随之退出。"""
+    if os.environ.get("RECOLOR_UI", "window") == "window":
+        try:
+            import webview  # 不在模块顶部 import：开发环境可能没装
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.CreateMutexW.restype = ctypes.c_void_p
-        kernel32.CreateMutexW.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_bool,
-            ctypes.c_wchar_p,
-        ]
-        _MUTEX_HANDLE = kernel32.CreateMutexW(None, False, "RecolorTool_SingleInstance")
-        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS → 有旧实例
-            try:
-                port = int(PORT_FILE.read_text(encoding="utf-8").strip())
-                if _port_healthy(port):
-                    _shutdown_old(port)
-                else:
-                    _kill_stale_pid()
-            except Exception:
-                pass
-            return True
-    except Exception:
-        pass
-    return False
+            window = webview.create_window("一键换色", url, width=1280, height=860)
+
+            def _watch():
+                _SHUTDOWN.wait()
+                time.sleep(0.2)
+                try:
+                    window.destroy()
+                except Exception:
+                    pass
+
+            webview.start(_watch)  # 主线程阻塞，直到窗口关闭
+            return
+        except Exception:
+            import traceback
+
+            _log("窗口模式不可用，回退浏览器：" + traceback.format_exc().replace("\n", " | "))
+    if os.environ.get("AUTO_OPEN", "1") == "1":
+        webbrowser.open(url)
+    _SHUTDOWN.wait()
 
 
 def _log(msg):
     """写启动日志（%LOCALAPPDATA%\\RecolorTool\\startup.log），方便排查“没反应”。"""
     try:
-        PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with (PORT_FILE.parent / "startup.log").open("a", encoding="utf-8") as f:
+        with (_state_dir() / "startup.log").open("a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
     except Exception:
         pass
@@ -870,8 +743,7 @@ def _log(msg):
 def _fatal(msg):
     """窗口程序没有控制台，启动失败时写日志并弹窗提示，避免“没反应”。"""
     try:
-        PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        (PORT_FILE.parent / "error.log").write_text(msg, encoding="utf-8")
+        (_state_dir() / "error.log").write_text(msg, encoding="utf-8")
     except Exception:
         pass
     try:
@@ -884,28 +756,40 @@ def _fatal(msg):
 
 def _main():
     global _SERVER
-    _log("启动中...")
-    _cleanup_sessions()
-    host = os.environ.get("HOST", "127.0.0.1")
-    preferred = int(os.environ.get("PORT", "8377"))
-    if _replace_old():
-        _log("已关闭旧实例，全新启动")
-    port = _find_free_port(preferred)
-    _write_port(port)
-    _write_pid()
-    _log(f"绑定端口 {port}")
-    browser_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
-    # 打包成 exe 后没有控制台，启动时自动打开浏览器
-    if os.environ.get("AUTO_OPEN", "1") == "1":
-        _open_browser(f"http://{browser_host}:{port}")
     from werkzeug.serving import make_server
 
-    _SERVER = make_server(host, port, app, threaded=True)
+    _log("启动中...")
+    _cleanup_legacy_files()
+    threading.Thread(target=_cleanup_sessions, daemon=True).start()  # 不挡启动
+
+    host = os.environ.get("HOST", "127.0.0.1")
+    # 默认端口 0 = 让系统分配空闲端口：不可能与别的实例或别的软件碰撞，也就不存在
+    # “端口一直被占用”。需要固定端口（局域网/开发调试）时设 PORT，例如 PORT=9000。
+    want = int(os.environ.get("PORT", "0"))
+    _SERVER = make_server(host, want, app, threaded=True)
+    port = _SERVER.port  # 真实端口（传 0 时由 werkzeug 回填）
     threading.Thread(target=_SERVER.serve_forever, daemon=True).start()
-    _log(f"服务已启动: http://{browser_host}:{port}")
-    print(f"一键换色已启动: http://{browser_host}:{port}  (Ctrl+C 退出)")
-    _SHUTDOWN.wait()
-    _log("服务已停止")
+    threading.Thread(target=_idle_watchdog, daemon=True).start()
+
+    browser_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    url = f"http://{browser_host}:{port}"
+    _log(f"服务已启动: {url}")
+    try:
+        print(f"一键换色已启动: {url}  (关窗口即退出)")
+    except Exception:
+        pass  # 无控制台（windowed exe）时 stdout 可能为 None
+    try:
+        _run_ui(url)
+    finally:
+        try:
+            _SERVER.shutdown()
+        except Exception:
+            pass
+        try:
+            _SERVER.server_close()
+        except Exception:
+            pass
+        _log("服务已停止")
 
 
 if __name__ == "__main__":

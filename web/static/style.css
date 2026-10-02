@@ -24,6 +24,7 @@ header {
 }
 header h1 { font-size: 17px; margin: 0; }
 .tagline { color: var(--muted); font-size: 12px; }
+#quitBtn { margin-left: auto; padding: 4px 14px; }
 
 .layout {
   display: grid;
